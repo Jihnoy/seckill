@@ -2,6 +2,7 @@ package cn.jihnoy.service.impl;
 
 import cn.jihnoy.dao.SecKillDao;
 import cn.jihnoy.dao.SuccessKilledDao;
+import cn.jihnoy.dao.cache.RedisDao;
 import cn.jihnoy.dto.Exposer;
 import cn.jihnoy.dto.SeckillExecution;
 import cn.jihnoy.entity.Seckill;
@@ -33,6 +34,9 @@ public class SeckillServiceImpl implements SeckillService {
     @Autowired
     private SuccessKilledDao successKilledDao;
 
+    @Autowired
+    private RedisDao redisDao;
+
     public List<Seckill> getSeckillList(){
         return secKillDao.queryAll(0, 4);
     }
@@ -42,9 +46,19 @@ public class SeckillServiceImpl implements SeckillService {
     }
 
     public Exposer exportSeckillUrl(long seckillId){
-        Seckill seckill = secKillDao.queryById(seckillId);
+        //优化缓存，超时基础上维护数据一致性
+        //1.访问redis
+        Seckill seckill = redisDao.getSeckill(seckillId);
         if(seckill == null){
-            return new Exposer(false, seckillId);
+            //2、访问数据库
+            seckill = secKillDao.queryById(seckillId);
+            if(seckill == null){
+                //没查到就生成Exposer
+                return new Exposer(false, seckillId);
+            }else {
+                //查到了放入redis
+                redisDao.putSeckill(seckill);
+            }
         }
         //秒杀未开启
         Date startTime = seckill.getStartTime();
